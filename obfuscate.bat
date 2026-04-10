@@ -4,6 +4,7 @@ chcp 65001 >nul 2>&1
 :: ============================================
 :: edgetunnel _worker.js 一键混淆打包工具
 :: 使用方法：与 _worker.js 放同一文件夹，双击运行
+:: 无需管理员权限，普通 CMD 即可执行
 :: ============================================
 
 echo.
@@ -148,28 +149,74 @@ if not exist "_zip_temp\_worker.js" (
     goto :EXIT
 )
 
-:: 方法1：PowerShell
-echo [INFO] 尝试 PowerShell 打包...
-powershell -NoProfile -Command "Compress-Archive -LiteralPath '%cd%\_zip_temp\_worker.js' -DestinationPath '%cd%\main.zip' -Force" 2>nul
+:: ------ 方法1：PowerShell Compress-Archive ------
+:: 切回系统默认代码页，避免 chcp 65001 导致 PowerShell 异常
+echo [INFO] 尝试 PowerShell Compress-Archive 打包...
+chcp 437 >nul 2>&1
 
-if exist "main.zip" goto :ZIP_DONE
+set "PS_SRC=%cd%\_zip_temp\_worker.js"
+set "PS_DST=%cd%\main.zip"
 
-:: 方法2：tar（Win10 1803+ 自带）
-echo [INFO] PowerShell 失败，尝试 tar ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "try { Compress-Archive -LiteralPath '!PS_SRC!' -DestinationPath '!PS_DST!' -Force -ErrorAction Stop; exit 0 } catch { Write-Host '[PS ERROR]' $_.Exception.Message; exit 1 }"
+
+chcp 65001 >nul 2>&1
+
+if exist "main.zip" (
+    echo [OK] PowerShell Compress-Archive 成功
+    goto :ZIP_DONE
+)
+
+:: ------ 方法2：PowerShell .NET ZipFile（兜底旧版PS） ------
+echo [INFO] Compress-Archive 失败，尝试 .NET ZipFile ...
+chcp 437 >nul 2>&1
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "try { Add-Type -AssemblyName System.IO.Compression.FileSystem; if (Test-Path '!PS_DST!') { Remove-Item '!PS_DST!' -Force }; [System.IO.Compression.ZipFile]::CreateFromDirectory('!cd!\_zip_temp', '!PS_DST!'); exit 0 } catch { Write-Host '[PS ERROR]' $_.Exception.Message; exit 1 }"
+
+chcp 65001 >nul 2>&1
+
+if exist "main.zip" (
+    echo [OK] .NET ZipFile 成功
+    goto :ZIP_DONE
+)
+
+:: ------ 方法3：tar（Win10 1803+ 自带） ------
+echo [INFO] PowerShell 均失败，尝试 tar ...
 pushd "_zip_temp"
-tar -acf "..\main.zip" _worker.js 2>nul
+tar -acf "..\main.zip" _worker.js 2>&1
 popd
 
-if exist "main.zip" goto :ZIP_DONE
+if exist "main.zip" (
+    echo [OK] tar 打包成功
+    goto :ZIP_DONE
+)
 
-:: 方法3：通过 jar（如果有 Java）
+:: ------ 方法4：jar（如果有 Java） ------
 where jar >nul 2>&1
 if %errorlevel% equ 0 (
     echo [INFO] tar 失败，尝试 jar ...
     pushd "_zip_temp"
-    jar -cMf "..\main.zip" _worker.js 2>nul
+    jar -cMf "..\main.zip" _worker.js 2>&1
     popd
+    if exist "main.zip" (
+        echo [OK] jar 打包成功
+        goto :ZIP_DONE
+    )
 )
+
+:: ------ 全部失败 ------
+rd /s /q "_zip_temp" 2>nul
+echo.
+echo [ERROR] 所有自动打包方式均失败
+echo.
+echo   请手动操作：
+echo   1. 把 !ZIP_SOURCE! 复制一份改名为 _worker.js
+echo   2. 右键该文件 - 发送到 - 压缩文件夹
+echo   3. 重命名为 main.zip
+echo.
+echo   或者安装 7-Zip 后手动压缩
+goto :SHOW_RESULT
 
 :ZIP_DONE
 rd /s /q "_zip_temp" 2>nul
@@ -178,14 +225,6 @@ if exist "main.zip" (
     for %%F in (main.zip) do set "ZIP_SIZE=%%~zF"
     echo.
     echo [OK] main.zip 打包成功（!ZIP_SIZE! 字节）
-) else (
-    echo.
-    echo [ERROR] 所有自动打包方式均失败
-    echo.
-    echo   请手动操作：
-    echo   1. 把 !ZIP_SOURCE! 复制一份改名为 _worker.js
-    echo   2. 右键该文件 - 发送到 - 压缩文件夹
-    echo   3. 重命名为 main.zip
 )
 
 :: ========== 显示结果 ==========
