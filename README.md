@@ -1,4 +1,5 @@
 # 1keyobfuscate
+一键混淆脚本
 第 1 步：安装 Node.js
 你需要先安装 Node.js，因为 javascript-obfuscator 是一个 Node.js 工具。
 
